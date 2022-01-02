@@ -2,6 +2,7 @@
 // $ cc -Ofast -march=native -fopenmp -o aidrivers aidrivers.c -lm
 // $ ./aidrivers <map.ppm | mpv --no-correct-pts --fps=60 -
 // $ ./aidrivers <map.ppm | x264 --fps=60 -o out.mp4 --frames 3600 /dev/stdin
+// $ zig build && zig-out/bin/aidrivers <map.ppm | mpv --no-correct-pts --fps=60 -./aidrivers <map.ppm | mpv --no-correct-pts --fps=60 -
 //
 // Input image format: road is black (000000), barriers are white (ffffff),
 // cars start on the green pixel (00ff00) aimed at the blue (0000ff) pixel.
@@ -16,24 +17,32 @@ const zimg = @import("zigimg");
 
 pub fn main() anyerror!void {
     var allocator = std.testing.allocator;
-    const p: Ppm = try readMapStdin(allocator);
-    // std.log.debug("ppm={}", .{p});
-    const map: Map = try Map.ppmToMap(&p, allocator);
-    std.log.debug("map={}", .{map.width});
     // ppm_read map
+    const p: Ppm = try readMapStdin(allocator);
     // ppm_to_map
+    var map: Map = try Map.ppmToMap(&p, allocator);
+    std.log.debug("map={}", .{map.width});
     // create overlay
+    var overlay: Ppm = try Ppm.new(p.width, p.height, allocator);
     // draw map
+    drawMap(&overlay, &map);
     // ppm_create
+    var out = try Ppm.new(p.width, p.height, allocator);
     // randomise configs
     // init  cars
     // while true
-    //   copy over overlay
-    //   draw_vehicles
-    //   ppm_write out
-    //   for car in cars:
-    //     drive
-    //   eras dead cars
+    var t: u64 = 0;
+    while (true) : (t += 1) {
+        //   copy over overlay
+        out.copy_from(&overlay);
+        var writer = std.io.getStdOut().writer();
+        out.write(writer);
+        //   draw_vehicles
+        //   ppm_write out
+        //   for car in cars:
+        //     drive
+        //   eras dead cars
+    }
 }
 
 fn readMapStdin(allocator: std.mem.Allocator) !Ppm {
@@ -111,18 +120,24 @@ const Map = struct {
         return ret;
 
     }
+
+    fn get(self: *@This(), x: u32, y: u32) u32 {
+        const pixel = y * self.width + x;
+        const item_size = 8 * @sizeOf(@TypeOf(self.data[0]));
+        return @intCast(u32, self.data[pixel / item_size] >> @intCast(u6, @mod(pixel, item_size)) & 1);
+    }
 };
 
 const RED: u64 = 0xff0000;
 const GREEN: u64 = 0x00ff00;
 const BLUE: u64 = 0x0000ff;
 
-const Col = enum {
-    red,
-    green,
-    blue,
-    black,
-    white,
+const Col = enum(u64) {
+    red = 0xff_00_00,
+    green = 0x00_ff_00,
+    blue = 0x00_00_ff,
+    black = 0x00_00_00,
+    white = 0xff_ff_ff,
     unexpected,
 
     fn colour(in: u64) @This() {
@@ -145,6 +160,18 @@ const Ppm = struct {
     height: u32,
     data: std.ArrayList(u8),
 
+    fn new(width: u32, height: u32, allocator: std.mem.Allocator) !Ppm {
+        // 3 bytes per colour
+        const data_sz = @as(usize, width * height * 3);
+        var buf = try std.ArrayList(u8).initCapacity(allocator, data_sz);
+        var ii: usize = 0;
+        while (ii < data_sz) : (ii += 1) {
+            buf.append(0) catch unreachable;
+        }
+        return Ppm{ .width = width, .height = height, .data = buf };
+    }
+
+
     fn from_reader(reader: std.fs.File.Reader, allocator: std.mem.Allocator) !@This() {
         const ppm_ver = try reader.readUntilDelimiterAlloc(allocator, '\n', 100);
         defer allocator.free(ppm_ver);
@@ -158,11 +185,10 @@ const Ppm = struct {
         const max_col_value = try reader.readUntilDelimiterAlloc(allocator, '\n', 100);
         std.log.info("ppm_ver={s} w={} h={} max_col_value={s}", .{ ppm_ver, width, height, max_col_value });
 
-        // 3 bytes per colour
+        var out = try new(width, height, allocator);
         const data_sz = @as(usize, width * height * 3);
-        var buf = try std.ArrayList(u8).initCapacity(allocator, data_sz);
-        try reader.readAllArrayList(&buf, data_sz);
-        return Ppm{ .width = width, .height = height, .data = buf };
+        try reader.readAllArrayList(&out.data, data_sz);
+        return out;
     }
 
     fn get_pixel(self: @This(), x: u32, y: u32) u64 {
@@ -177,7 +203,46 @@ const Ppm = struct {
         // std.log.debug("px at {},{} = {}", .{ x, y, Col.colour(ret) });
         return ret;
     }
+    fn set_pixel(self: @This(), x: u32, y: u32, val: u64) void {
+        // todo bounds checks
+        // std.log.debug("set px at {},{} = {}", .{ x, y, Col.colour(val) });
+        const loc = 3 * self.width * y + 3 * x;
+        // red
+        self.data.items[loc + 0] = @truncate(u8, val >> 16);
+        // green
+        self.data.items[loc + 1] = @truncate(u8, val >> 8);
+        // blue
+        self.data.items[loc + 2] = @truncate(u8, val >> 0);
+    }
+
+    fn copy_from(self: *@This(), src: *Ppm) void {
+        std.debug.assert(self.width == src.width);
+        std.debug.assert(self.height == src.height);
+        const data_sz = @as(usize, self.width * self.height * 3);
+        self.data.replaceRange(0, data_sz, src.data.items) catch unreachable;
+    }
+
+    fn write(self: *@This(), writer: std.fs.File.Writer) void {
+        var buf: [100]u8 = undefined;
+        const header = std.fmt.bufPrint(&buf, "P6\n{d} {d}\n255\n", .{self.width, self.height}) catch unreachable;
+        _ = writer.write(header) catch unreachable;
+        _ = writer.write(self.data.items[0..self.data.items.len]) catch unreachable;
+        // _ = writer.write("foo\n") catch unreachable;
+        // std.log.debug("hdr {d} data {d}", .{hdr_size, data_size});
+    }
 };
+
+fn drawMap(ppm: *Ppm, map: *Map) void {
+    var scale: u32 = ppm.width / map.width;
+    var y: u32 = 0;
+    while (y < ppm.height) : (y += 1) {
+        var x: u32 = 0;
+        while (x < ppm.width) : (x += 1) {
+            const colour: u64 = @enumToInt(if (map.get(x / scale, y / scale) > 0) Col.white else Col.black);
+            ppm.set_pixel(x, y, colour);
+        }
+    }
+}
 
 // fn zigimg() !void {
 //     var allocator = std.testing.allocator;

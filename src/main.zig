@@ -16,6 +16,9 @@ const zimg = @import("zigimg");
 // const PPM = zimg.netpbm.PPM;
 
 pub fn main() anyerror!void {
+    const scale = 12;
+    var vehicles: [1]Vehicle = .{Vehicle{.x = 25, .y = 25, .a = 3.0, .colour = @enumToInt(Col.red)}};
+
     var allocator = std.testing.allocator;
     // ppm_read map
     const p: Ppm = try readMapStdin(allocator);
@@ -23,11 +26,11 @@ pub fn main() anyerror!void {
     var map: Map = try Map.ppmToMap(&p, allocator);
     std.log.debug("map={}", .{map.width});
     // create overlay
-    var overlay: Ppm = try Ppm.new(p.width, p.height, allocator);
+    var overlay: Ppm = try Ppm.new(p.width * scale, p.height * scale, allocator);
     // draw map
     drawMap(&overlay, &map);
     // ppm_create
-    var out = try Ppm.new(p.width, p.height, allocator);
+    var out = try Ppm.new(p.width * scale, p.height * scale, allocator);
     // randomise configs
     // init  cars
     // while true
@@ -35,6 +38,8 @@ pub fn main() anyerror!void {
     while (true) : (t += 1) {
         //   copy over overlay
         out.copy_from(&overlay);
+        drawVehicles(&out, &map, &vehicles);
+        vehicles[0].a += 0.1;
         var writer = std.io.getStdOut().writer();
         out.write(writer);
         //   draw_vehicles
@@ -58,6 +63,13 @@ fn getPixel(pixels: []zimg.color.Rgb24, info: zimg.image.ImageInfo, x: u32, y: u
     std.log.debug("px = {}", .{out});
     return out.toColor();
 }
+
+const Vehicle = struct {
+    x: f32,
+    y: f32,
+    a: f32,
+    colour: u64,
+};
 
 const Map = struct {
     width: u32,
@@ -193,7 +205,7 @@ const Ppm = struct {
 
     fn get_pixel(self: @This(), x: u32, y: u32) u64 {
         // todo bounds checks
-        std.log.debug("fetch at {},{}", .{ x, y});
+        // std.log.debug("fetch at {},{}", .{ x, y});
         const loc = 3 * self.width * y + 3 * x;
         const red: u64 = @as(u64, self.data.items[loc + 0]) << 16;
         const green: u64 = @as(u64, self.data.items[loc + 1]) << 8;
@@ -241,6 +253,27 @@ fn drawMap(ppm: *Ppm, map: *Map) void {
             const colour: u64 = @enumToInt(if (map.get(x / scale, y / scale) > 0) Col.white else Col.black);
             ppm.set_pixel(x, y, colour);
         }
+    }
+}
+
+const PI = 3.14;
+
+fn drawVehicles(ppm: *Ppm, map: *Map, vehicles: []Vehicle) void {
+    const scale: i32 = @intCast(i32, ppm.width / map.width);
+    for (vehicles) |v, i| {
+        _ = i;
+        var d: i32 = -scale * 2;
+        while (d < scale * 2) : (d += 1) {
+            var j: i32 = -@divTrunc(scale, 2);
+            while (j < @divTrunc(scale, 2)) : (j += 1) {
+                // const x: f32 = @intToFloat(f32, scale) * v.x;
+                const x: f32 = @intToFloat(f32, scale) * v.x + @intToFloat(f32, j) * @cos(v.a - PI / 2.0) + @intToFloat(f32, d) * @cos(v.a) / 2.0;
+                const y: f32 = @intToFloat(f32, scale) * v.y + @intToFloat(f32, j) * @sin(v.a - PI / 2.0) + @intToFloat(f32, d) * @sin(v.a) / 2.0;
+                std.log.debug("{} {}", .{x, y});
+                ppm.set_pixel(@floatToInt(u32, x), @floatToInt(u32, y), v.colour);
+            }
+        }
+
     }
 }
 

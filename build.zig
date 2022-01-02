@@ -12,6 +12,7 @@ pub fn build(b: *std.build.Builder) void {
     const mode = b.standardReleaseOptions();
 
     const exe = b.addExecutable("aidrivers", "src/main.zig");
+    // exe.addPackagePath("zigimg", "ext/zigimg/zigimg.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.install();

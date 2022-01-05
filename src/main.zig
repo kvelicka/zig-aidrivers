@@ -67,6 +67,7 @@ pub fn main() anyerror!void {
         vehicle.x = @intToFloat(f32, map.start_x);
         vehicle.y = @intToFloat(f32, map.start_y);
         vehicle.angle = map.start_angle;
+        vehicle.colour = prng.random().int(u32) >> 8 | 0x404040;
     }
     var t: u64 = 0;
     while (true) : (t += 1) {
@@ -110,6 +111,7 @@ fn drive(vehicle: *Vehicle, config: *Config, map: *Map, sysconf: *const Sysconf)
     _ = sysconf;
     _ = config;
     if (!alive(vehicle, map)) {
+        // std.log.debug("dead!", .{});
         return false;
     }
 
@@ -145,7 +147,7 @@ fn sense(x: f32, y: f32, a: f32, map: *Map, maybe_ppm: ?*Ppm) f32 {
         if (ix < 0 or (ix >= map.width) or (iy < 0) or (iy >= map.height)) {
             break;
         }
-        if (map.get(@intCast(u32, ix), @intCast(u32, iy)) > 0) {
+        if (map.get(@intCast(u32, ix), @intCast(u32, iy))) {
             break;
         }
         if (maybe_ppm) |ppm| {
@@ -164,7 +166,7 @@ fn sense(x: f32, y: f32, a: f32, map: *Map, maybe_ppm: ?*Ppm) f32 {
 }
 
 fn alive(vehicle: *const Vehicle, map: *const Map) bool {
-    return map.get(@floatToInt(u32, vehicle.x), @floatToInt(u32, vehicle.y)) > 0;
+    return !map.get(@floatToInt(u32, vehicle.x), @floatToInt(u32, vehicle.y));
 }
 
 const Vehicle = struct {
@@ -237,23 +239,33 @@ const Map = struct {
             }
         }
         y = 0;
-        while (y < ppm.height) : ( y += 1 ) {
+        while (y < ppm.height) : (y += 1) {
             x = 0;
-            while (x < ppm.width) : ( x += 1 ) {
+            while (x < ppm.width) : (x += 1) {
                 const col = ppm.get_pixel(x, y);
                 const v = @as(u64, @boolToInt(col >> 16 > 0x7f));
                 const pixel: usize = y * ppm.width + x;
-                ret.data[pixel/item_size] |= v << @intCast(u6, @mod(pixel, item_size));
+                // std.log.debug(
+                //     "{d:2} {d:2} ({d:4}) - col={} v={} ix={} current={X:64} casted={X:64}",
+                //     .{
+                //         x,
+                //         y,
+                //         pixel,
+                //         Col.colour(col),
+                //         v,
+                //         pixel / item_size,
+                //         ret.data[pixel/ item_size],
+                //         v << @intCast(u6, @mod(pixel, item_size)) });
+                ret.data[pixel / item_size] |= v << @intCast(u6, @mod(pixel, item_size));
             }
         }
         return ret;
-
     }
 
-    fn get(self: *const @This(), x: u32, y: u32) u32 {
+    fn get(self: *const @This(), x: u32, y: u32) bool {
         const pixel = y * self.width + x;
-        const item_size = 8 * @sizeOf(@TypeOf(self.data[0]));
-        return @intCast(u32, self.data[pixel / item_size] >> @intCast(u6, @mod(pixel, item_size)) & 1);
+        const item_size = 8 * @sizeOf(u64);
+        return self.data[pixel / item_size] >> @intCast(u6, @mod(pixel, item_size)) & 1 > 0;
     }
 };
 
@@ -363,7 +375,7 @@ fn drawMap(ppm: *Ppm, map: *Map) void {
     while (y < ppm.height) : (y += 1) {
         var x: u32 = 0;
         while (x < ppm.width) : (x += 1) {
-            const colour: u64 = @enumToInt(if (map.get(x / scale, y / scale) > 0) Col.white else Col.black);
+            const colour: u64 = @enumToInt(if (map.get(x / scale, y / scale)) Col.white else Col.black);
             ppm.set_pixel(x, y, colour);
         }
     }

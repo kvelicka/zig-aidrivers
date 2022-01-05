@@ -197,8 +197,11 @@ const Map = struct {
     fn ppmToMap(ppm: *const Ppm, allocator: std.mem.Allocator) !@This() {
         const item_size = 8 * @sizeOf(u64);
         const data_sz = (ppm.width * ppm.height + item_size - 1) / item_size * @sizeOf(u64);
-        var map_buf = try allocator.alloc(u64, data_sz);
         std.log.debug("data_sz={}", .{data_sz});
+        var map_buf = try allocator.alloc(u64, data_sz);
+        for (map_buf) |*item| {
+            item.* = 0;
+        }
         var ret = Map{
             .width = ppm.width,
             .height = ppm.height,

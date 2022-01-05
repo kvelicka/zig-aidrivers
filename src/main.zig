@@ -80,7 +80,7 @@ pub fn main() anyerror!void {
         out.write(writer);
         //   for car in cars:
         for (vehicles) |*vehicle, ix| {
-        //     drive
+            //     drive
             _ = drive(vehicle, &configs[ix], &map, &cfg);
         }
         //   erase dead cars
@@ -101,7 +101,7 @@ fn readMapStdin(allocator: std.mem.Allocator) !Ppm {
 }
 fn getPixel(pixels: []zimg.color.Rgb24, info: zimg.image.ImageInfo, x: u32, y: u32) zimg.color.Color {
     const loc = info.width * y + x;
-    const out =  pixels[loc];
+    const out = pixels[loc];
     std.log.debug("px = {}", .{out});
     return out.toColor();
 }
@@ -114,7 +114,7 @@ fn drive(vehicle: *Vehicle, config: *Config, map: *Map, sysconf: *const Sysconf)
     }
 
     var senses = [_]f32{0.0} ** 3;
-    var angles = [_]f32 {PI/-4.0, 0, PI/4.0};
+    var angles = [_]f32{ PI / -4.0, 0, PI / 4.0 };
     for (senses) |_, ix| {
         senses[ix] = sense(vehicle.x, vehicle.y, vehicle.angle + angles[ix], map, null);
     }
@@ -148,7 +148,7 @@ fn sense(x: f32, y: f32, a: f32, map: *Map, maybe_ppm: ?*Ppm) f32 {
         if (map.get(@intCast(u32, ix), @intCast(u32, iy)) > 0) {
             break;
         }
-        if(maybe_ppm) |ppm| {
+        if (maybe_ppm) |ppm| {
             var scale: u32 = ppm.width / map.width;
             var py: u32 = 0;
             while (py < scale) : (py += 1) {
@@ -183,7 +183,7 @@ const Sysconf = struct {
     speedmin: f32 = 0.1,
     speedmax: f32 = 0.5,
     // Maximum turn per step
-    control: f32 = PI/128.0,
+    control: f32 = PI / 128.0,
 };
 
 const Map = struct {
@@ -209,21 +209,21 @@ const Map = struct {
         };
         var x: u32 = 0;
         var y: u32 = 0;
-        while (y < ppm.height) : ( y += 1 ) {
+        while (y < ppm.height) : (y += 1) {
             x = 0;
-            while (x < ppm.width) : ( x += 1 ) {
+            while (x < ppm.width) : (x += 1) {
                 const col = ppm.get_pixel(x, y);
                 if (Col.colour(col) == Col.green) {
-                    std.log.debug("new start loc! x,y={},{}", .{x, y});
+                    std.log.debug("new start loc! x,y={},{}", .{ x, y });
                     ret.start_x = x;
                     ret.start_y = y;
                 }
             }
         }
         y = 0;
-        while (y < ppm.height) : ( y += 1 ) {
+        while (y < ppm.height) : (y += 1) {
             x = 0;
-            while (x < ppm.width) : ( x += 1 ) {
+            while (x < ppm.width) : (x += 1) {
                 const col = ppm.get_pixel(x, y);
                 if (Col.colour(col) == Col.blue) {
                     const fy: f32 = @intToFloat(f32, (y - ret.start_y));
@@ -297,7 +297,6 @@ const Ppm = struct {
         return Ppm{ .width = width, .height = height, .data = buf };
     }
 
-
     fn from_reader(reader: std.fs.File.Reader, allocator: std.mem.Allocator) !@This() {
         const ppm_ver = try reader.readUntilDelimiterAlloc(allocator, '\n', 100);
         defer allocator.free(ppm_ver);
@@ -349,7 +348,7 @@ const Ppm = struct {
 
     fn write(self: *@This(), writer: std.fs.File.Writer) void {
         var buf: [100]u8 = undefined;
-        const header = std.fmt.bufPrint(&buf, "P6\n{d} {d}\n255\n", .{self.width, self.height}) catch unreachable;
+        const header = std.fmt.bufPrint(&buf, "P6\n{d} {d}\n255\n", .{ self.width, self.height }) catch unreachable;
         _ = writer.write(header) catch unreachable;
         _ = writer.write(self.data.items[0..self.data.items.len]) catch unreachable;
     }
@@ -382,6 +381,5 @@ fn drawVehicles(ppm: *Ppm, map: *Map, vehicles: []Vehicle) void {
                 ppm.set_pixel(@floatToInt(u32, x), @floatToInt(u32, y), v.colour);
             }
         }
-
     }
 }

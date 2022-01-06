@@ -1,5 +1,6 @@
 const std = @import("std");
 
+
 pub fn build(b: *std.build.Builder) void {
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
@@ -15,6 +16,7 @@ pub fn build(b: *std.build.Builder) void {
     // exe.addPackagePath("zigimg", "ext/zigimg/zigimg.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
+    @import("ext/zgt/build.zig").install(exe, "ext/zgt") catch std.log.debug("no zgt??", .{});
     exe.install();
 
     const run_cmd = exe.run();

@@ -15,81 +15,129 @@ const std = @import("std");
 const zimg = @import("zigimg");
 // const PPM = zimg.netpbm.PPM;
 
+const zgt = @import("zgt");
+pub usingnamespace zgt.cross_platform;
+
 pub fn main() anyerror!void {
-    const scale = 12;
-    const nvehicle = 2;
-    var vehicles: [nvehicle]Vehicle = .{
+    var vehicles = [_]Vehicle {
         Vehicle{.x = 10, .y = 10, .angle = 3.0, .colour = @enumToInt(Col.red)},
         Vehicle{.x = 10, .y = 10, .angle = 3.0, .colour = @enumToInt(Col.red)}
     };
-    var configs: [nvehicle]Config = .{
+    var configs = [_]Config {
         Config{.c0 = 0.1, .c1 = 0.1},
         Config{.c0 = 0.5, .c1 = 0.5},
     };
-    const cfg = Sysconf{};
-
-    var prng = std.rand.DefaultPrng.init(blk: {
-        var seed: u64 = undefined;
-        try std.os.getrandom(std.mem.asBytes(&seed));
-        break :blk seed;
-    });
-
     var allocator = std.testing.allocator;
+
     // ppm_read map
-    const p: Ppm = try readMapStdin(allocator);
+    const map_image: Ppm = try readMapStdin(allocator);
     // ppm_to_map
-    var map: Map = try Map.ppmToMap(&p, allocator);
+    var map: Map = try Map.ppmToMap(&map_image, allocator);
 
-    // Format a map or ppm in shell
-    // // for (p.data.items) |col, ix| {
-    // var i: u32 = 0;
-    // while (i < p.width * p.height) : (i += 1) {
-    //     if (@rem(i, p.width) == 0) {
-    //         try std.fmt.format(std.io.getStdOut().writer(), "\n", .{});
-    //     }
-    //     // try std.fmt.format(std.io.getStdOut().writer(), "{d:03} ", .{col});
-    //     // _ = col;
-    //     try std.fmt.format(std.io.getStdOut().writer(), "{} ", .{map.get(@divFloor(i, p.width), @rem(i, p.height))});
-    // }
+    var sim = try Simulation.new(&map, &vehicles, &configs, allocator);
+    var out_image = try Ppm.new(map.width * sim.scale, map.height * sim.scale, allocator);
+    try sim.run(1, &out_image);
 
-    // create overlay
-    var overlay: Ppm = try Ppm.new(p.width * scale, p.height * scale, allocator);
-    // draw map
-    drawMap(&overlay, &map);
-    // ppm_create
-    var out = try Ppm.new(p.width * scale, p.height * scale, allocator);
-    // randomise configs
-    for (configs) |*config| {
-        randomise(config, &prng);
-    }
-    // init  cars
-    for (vehicles) |*vehicle| {
-        vehicle.x = @intToFloat(f32, map.start_x);
-        vehicle.y = @intToFloat(f32, map.start_y);
-        vehicle.angle = map.start_angle;
-        vehicle.colour = prng.random().int(u32) >> 8 | 0x404040;
-    }
-    var t: u64 = 0;
-    while (true) : (t += 1) {
-        //   copy over overlay
-        out.copy_from(&overlay);
-        // vehicles[0].angle += 0.1;
-        //   draw_vehicles
-        drawVehicles(&out, &map, &vehicles);
-        //   ppm_write out
-        var writer = std.io.getStdOut().writer();
-        out.write(writer);
-        //   for car in cars:
-        for (vehicles) |*vehicle, ix| {
-            //     drive
-            _ = drive(vehicle, &configs[ix], &map, &cfg);
+    try zgt.backend.init();
+    var window = try zgt.Window.init();
+    var imageData = try zgt.ImageData.fromBytes(out_image.width, out_image.height, out_image.width * 3, zgt.Colorspace.RGB, out_image.data.items);
+    
+    var button = zgt.Button(.{ .label = "Test"});
+    var image = zgt.Image(.{ .data = imageData });
+    try window.set(
+        zgt.Column(.{}, .{
+            zgt.Row(.{}, .{
+                &image,
+                &button
+            })
+        })
+    );
+
+    window.resize(800, 450);
+    window.show();
+    var frame_start: i64 = 0;
+    while (zgt.stepEventLoop(.Asynchronous)) {
+        var dt = zgt.internal.milliTimestamp() - frame_start;
+        if (dt > 16) {
+            try sim.run(2, &out_image);
+            if (image.peer) |*peer| {
+                peer.setData(imageData.peer);
+            }
+            frame_start = zgt.internal.milliTimestamp();
+            continue;
         }
-        //   erase dead cars
+        std.time.sleep(1000);
     }
 }
 
-fn randomise(config: *Config, prng: *std.rand.Xoshiro256) void {
-    var random = prng.random();
+const Simulation = struct {
+    scale: u32 = 12,
+    nvehicle: u32 = 2,
+    cfg: Sysconf = Sysconf{},
+    t: u64 = 0,
+
+    vehicles: []Vehicle,
+    configs: []Config,
+    allocator: std.mem.Allocator,
+    overlay: Ppm,
+    map: *Map,
+
+    const Self = @This();
+
+    fn new(map: *Map, vehicles: []Vehicle, configs: []Config, allocator: anytype) !Simulation {
+        // create overlay
+        var out = Simulation{
+            .vehicles = vehicles,
+            .configs = configs,
+            .allocator = allocator,
+            .overlay = undefined,
+            .map = map,
+        };
+        out.overlay = try Ppm.new(map.width * out.scale, map.height * out.scale, allocator);
+        // draw map
+        drawMap(&out.overlay, out.map);
+
+        var random = std.rand.DefaultPrng.init(blk: {
+                    var seed: u64 = undefined;
+                    try std.os.getrandom(std.mem.asBytes(&seed));
+                    break :blk seed;
+                }).random();
+        // randomise configs
+        for (out.configs) |*config| {
+            randomise(config, random);
+        }
+        // init  cars
+        for (out.vehicles) |*vehicle| {
+            vehicle.x = @intToFloat(f32, map.start_x);
+            vehicle.y = @intToFloat(f32, map.start_y);
+            vehicle.angle = map.start_angle;
+            vehicle.colour = random.int(u32) >> 8 | 0x404040;
+        }
+        return out;
+    }
+
+    fn run(self: *Self, gens: u32, out: *Ppm) !void {
+        var gens_done: u32 = 0;
+        while (gens_done < gens) : (gens_done += 1) {
+            //   copy over overlay
+            out.copy_from(&self.overlay);
+            // vehicles[0].angle += 0.1;
+            //   draw_vehicles
+            drawVehicles(out, self.map, self.vehicles);
+            //   ppm_write out
+            // out.write(std.io.getStdOut().writer());
+            //   for car in cars:
+            for (self.vehicles) |*vehicle, ix| {
+                //     drive
+                _ = drive(vehicle, &self.configs[ix], self.map, &self.cfg);
+            }
+            //   erase dead cars
+            self.t += 1;
+        }
+    }
+};
+
+fn randomise(config: *Config, random: std.rand.Random) void {
     const exp: f32 = -32.0;
     config.c0 = 1.0 * random.floatNorm(f32) * @exp2(exp);
     config.c1 = 0.1 * random.floatNorm(f32) * @exp2(exp);
@@ -245,17 +293,6 @@ const Map = struct {
                 const col = ppm.get_pixel(x, y);
                 const v = @as(u64, @boolToInt(col >> 16 > 0x7f));
                 const pixel: usize = y * ppm.width + x;
-                // std.log.debug(
-                //     "{d:2} {d:2} ({d:4}) - col={} v={} ix={} current={X:64} casted={X:64}",
-                //     .{
-                //         x,
-                //         y,
-                //         pixel,
-                //         Col.colour(col),
-                //         v,
-                //         pixel / item_size,
-                //         ret.data[pixel/ item_size],
-                //         v << @intCast(u6, @mod(pixel, item_size)) });
                 ret.data[pixel / item_size] |= v << @intCast(u6, @mod(pixel, item_size));
             }
         }

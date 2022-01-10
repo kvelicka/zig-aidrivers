@@ -19,24 +19,24 @@ const zgt = @import("zgt");
 pub usingnamespace zgt.cross_platform;
 
 pub fn main() anyerror!void {
-    var vehicles = [_]Vehicle {
-        Vehicle{.x = 10, .y = 10, .angle = 3.0, .colour = @enumToInt(Col.red)},
-        Vehicle{.x = 10, .y = 10, .angle = 3.0, .colour = @enumToInt(Col.red)}
-    };
-    var configs = [_]Config {
-        Config{.c0 = 0.1, .c1 = 0.1},
-        Config{.c0 = 0.5, .c1 = 0.5},
-    };
+    var vehicles: [250]Vehicle = undefined;
+    // {
+    //     Vehicle{.x = 10, .y = 10, .angle = 3.0, .colour = @enumToInt(Col.red)},
+    //     Vehicle{.x = 10, .y = 10, .angle = 3.0, .colour = @enumToInt(Col.red)}
+    // };
     var allocator = std.testing.allocator;
+
+    var beams = false;
+    var scale: u32 = 3;
 
     // ppm_read map
     const map_image: Ppm = try readMapStdin(allocator);
     // ppm_to_map
     var map: Map = try Map.ppmToMap(&map_image, allocator);
 
-    var sim = try Simulation.new(&map, &vehicles, &configs, allocator);
+    var sim = try Simulation.new(&map, scale, &vehicles, allocator);
     var out_image = try Ppm.new(map.width * sim.scale, map.height * sim.scale, allocator);
-    try sim.run(1, &out_image);
+    try sim.run(1, &out_image, beams);
 
     try zgt.backend.init();
     var window = try zgt.Window.init();
@@ -59,14 +59,14 @@ pub fn main() anyerror!void {
     while (zgt.stepEventLoop(.Asynchronous)) {
         var dt = zgt.internal.milliTimestamp() - frame_start;
         if (dt > 16) {
-            try sim.run(2, &out_image);
+            try sim.run(2, &out_image, beams);
             if (image.peer) |*peer| {
                 peer.setData(imageData.peer);
             }
             frame_start = zgt.internal.milliTimestamp();
             continue;
         }
-        std.time.sleep(1000);
+        // std.time.sleep(16);
     }
 }
 
@@ -77,71 +77,78 @@ const Simulation = struct {
     t: u64 = 0,
 
     vehicles: []Vehicle,
-    configs: []Config,
     allocator: std.mem.Allocator,
     overlay: Ppm,
     map: *Map,
 
     const Self = @This();
 
-    fn new(map: *Map, vehicles: []Vehicle, configs: []Config, allocator: anytype) !Simulation {
+    fn new(map: *Map, scale: u32, vehicles: []Vehicle, allocator: anytype) !Simulation {
         // create overlay
         var out = Simulation{
             .vehicles = vehicles,
-            .configs = configs,
             .allocator = allocator,
             .overlay = undefined,
             .map = map,
+            .scale = scale,
         };
+        var random = std.rand.DefaultPrng.init(blk: {
+                    var seed: u64 = undefined;
+                    std.os.getrandom(std.mem.asBytes(&seed)) catch unreachable;
+                    break :blk seed;
+                }).random();
+        // dont forget to set up vehicles
+        for (vehicles) |_, ix| {
+            vehicles[ix] = Vehicle.new(map.start_x, map.start_y, map.start_angle, random);
+        }
+        vehicles[0].c0 = 0.896;
+        vehicles[0].c1 = 0.00354;
+
         out.overlay = try Ppm.new(map.width * out.scale, map.height * out.scale, allocator);
         // draw map
         drawMap(&out.overlay, out.map);
 
-        var random = std.rand.DefaultPrng.init(blk: {
-                    var seed: u64 = undefined;
-                    try std.os.getrandom(std.mem.asBytes(&seed));
-                    break :blk seed;
-                }).random();
-        // randomise configs
-        for (out.configs) |*config| {
-            randomise(config, random);
-        }
-        // init  cars
-        for (out.vehicles) |*vehicle| {
-            vehicle.x = @intToFloat(f32, map.start_x);
-            vehicle.y = @intToFloat(f32, map.start_y);
-            vehicle.angle = map.start_angle;
-            vehicle.colour = random.int(u32) >> 8 | 0x404040;
-        }
         return out;
     }
 
-    fn run(self: *Self, gens: u32, out: *Ppm) !void {
+    fn run(self: *Self, gens: u32, out: *Ppm, beams: bool) !void {
+        if (self.vehicles.len == 0) {
+            return;
+        }
         var gens_done: u32 = 0;
         while (gens_done < gens) : (gens_done += 1) {
             //   copy over overlay
             out.copy_from(&self.overlay);
-            // vehicles[0].angle += 0.1;
             //   draw_vehicles
             drawVehicles(out, self.map, self.vehicles);
             //   ppm_write out
             // out.write(std.io.getStdOut().writer());
+            if (beams) {
+                for (self.vehicles) |*vehicle| {
+                    _ = sense(vehicle.x, vehicle.y, vehicle.angle - PI / 4.0, self.map, out);
+                    _ = sense(vehicle.x, vehicle.y, vehicle.angle, self.map, out);
+                    _ = sense(vehicle.x, vehicle.y, vehicle.angle + PI / 4.0, self.map, out);
+                }
+            }
             //   for car in cars:
-            for (self.vehicles) |*vehicle, ix| {
+            for (self.vehicles) |*vehicle| {
                 //     drive
-                _ = drive(vehicle, &self.configs[ix], self.map, &self.cfg);
+                _ = drive(vehicle, self.map, &self.cfg);
             }
             //   erase dead cars
+            for (self.vehicles) |*vehicle, ix| {
+                if (!alive(vehicle, self.map)) {
+                    drawVehicles(&self.overlay, self.map, self.vehicles[ix..ix]);
+                }
+            }
+            if (self.vehicles.len == 0) {
+                std.log.debug("bailing!", .{});
+                return;
+            }
             self.t += 1;
         }
     }
 };
-
-fn randomise(config: *Config, random: std.rand.Random) void {
-    const exp: f32 = -32.0;
-    config.c0 = 1.0 * random.floatNorm(f32) * @exp2(exp);
-    config.c1 = 0.1 * random.floatNorm(f32) * @exp2(exp);
-}
 
 fn readMapStdin(allocator: std.mem.Allocator) !Ppm {
     var reader = std.io.getStdIn().reader();
@@ -155,11 +162,8 @@ fn getPixel(pixels: []zimg.color.Rgb24, info: zimg.image.ImageInfo, x: u32, y: u
     return out.toColor();
 }
 
-fn drive(vehicle: *Vehicle, config: *Config, map: *Map, sysconf: *const Sysconf) bool {
-    _ = sysconf;
-    _ = config;
+fn drive(vehicle: *Vehicle, map: *Map, sysconf: *const Sysconf) bool {
     if (!alive(vehicle, map)) {
-        // std.log.debug("dead!", .{});
         return false;
     }
 
@@ -169,8 +173,8 @@ fn drive(vehicle: *Vehicle, config: *Config, map: *Map, sysconf: *const Sysconf)
         senses[ix] = sense(vehicle.x, vehicle.y, vehicle.angle + angles[ix], map, null);
     }
 
-    var steering: f32 = senses[2] * config.c0 - senses[0] * config.c0;
-    var throttle: f32 = senses[1] * config.c1;
+    var steering: f32 = senses[2] * vehicle.c0 - senses[0] * vehicle.c0;
+    var throttle: f32 = senses[1] * vehicle.c1;
     if (throttle < sysconf.speedmin) {
         throttle = sysconf.speedmin;
     }
@@ -189,7 +193,7 @@ fn sense(x: f32, y: f32, a: f32, map: *Map, maybe_ppm: ?*Ppm) f32 {
     var d: i32 = 0;
     while (true) : (d += 1) {
         var bx: f32 = x + dx * @intToFloat(f32, d);
-        var by = y * dy * @intToFloat(f32, d);
+        var by = y + dy * @intToFloat(f32, d);
         var ix: i32 = @floatToInt(i32, bx);
         var iy: i32 = @floatToInt(i32, by);
         if (ix < 0 or (ix >= map.width) or (iy < 0) or (iy >= map.height)) {
@@ -204,7 +208,8 @@ fn sense(x: f32, y: f32, a: f32, map: *Map, maybe_ppm: ?*Ppm) f32 {
             while (py < scale) : (py += 1) {
                 var px: u32 = 0;
                 while (px < scale) : (px += 1) {
-                    ppm.set_pixel(@intCast(u32, ix) * scale + px, @intCast(u3, iy) * scale + py, @enumToInt(Col.red));
+                    // std.log.debug("drawing beams", .{});
+                    ppm.set_pixel(@intCast(u32, ix) * scale + px, @intCast(u32, iy) * scale + py, @enumToInt(Col.red));
                 }
             }
         }
@@ -222,11 +227,21 @@ const Vehicle = struct {
     y: f32,
     angle: f32,
     colour: u64,
-};
-
-const Config = struct {
     c0: f32,
     c1: f32,
+
+    fn new(x: u32, y: u32, angle: f32, random: std.rand.Random) Vehicle {
+        // var random = std.rand.DefaultPrng.init(0).random();
+        const exp: f32 = -32.0;
+        return Vehicle {
+            .x = @intToFloat(f32, x),
+            .y = @intToFloat(f32, y),
+            .angle = angle,
+            .colour = random.int(u32) >> 8 | 0x404040,
+            .c0 = 1.0 * @intToFloat(f32, random.int(u32)) * @exp2(exp),
+            .c1 = 0.1 * @intToFloat(f32, random.int(u32)) * @exp2(exp),
+        };
+    }
 };
 
 const Sysconf = struct {

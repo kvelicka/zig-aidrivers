@@ -13,27 +13,19 @@
 //
 const std = @import("std");
 const zimg = @import("zigimg");
-// const PPM = zimg.netpbm.PPM;
 
 const zgt = @import("zgt");
 pub usingnamespace zgt.cross_platform;
 
 pub fn main() anyerror!void {
-    var vehicles: [250]Vehicle = undefined;
-    // {
-    //     Vehicle{.x = 10, .y = 10, .angle = 3.0, .colour = @enumToInt(Col.red)},
-    //     Vehicle{.x = 10, .y = 10, .angle = 3.0, .colour = @enumToInt(Col.red)}
-    // };
+    var vehicles: [25]Vehicle = undefined;
     var allocator = std.testing.allocator;
 
     var beams = false;
     var scale: u32 = 3;
 
-    // ppm_read map
     const map_image: Ppm = try readMapStdin(allocator);
-    // ppm_to_map
     var map: Map = try Map.ppmToMap(&map_image, allocator);
-
     var sim = try Simulation.new(&map, scale, &vehicles, allocator);
     var out_image = try Ppm.new(map.width * sim.scale, map.height * sim.scale, allocator);
     try sim.run(1, &out_image, beams);
@@ -59,20 +51,19 @@ pub fn main() anyerror!void {
     while (zgt.stepEventLoop(.Asynchronous)) {
         var dt = zgt.internal.milliTimestamp() - frame_start;
         if (dt > 16) {
-            try sim.run(2, &out_image, beams);
+            try sim.run(1, &out_image, beams);
             if (image.peer) |*peer| {
                 peer.setData(imageData.peer);
             }
             frame_start = zgt.internal.milliTimestamp();
             continue;
         }
-        // std.time.sleep(16);
+        std.time.sleep(16);
     }
 }
 
 const Simulation = struct {
-    scale: u32 = 12,
-    nvehicle: u32 = 2,
+    scale: u32,
     cfg: Sysconf = Sysconf{},
     t: u64 = 0,
 
@@ -84,30 +75,24 @@ const Simulation = struct {
     const Self = @This();
 
     fn new(map: *Map, scale: u32, vehicles: []Vehicle, allocator: anytype) !Simulation {
-        // create overlay
         var out = Simulation{
             .vehicles = vehicles,
             .allocator = allocator,
-            .overlay = undefined,
+            .overlay = try Ppm.new(map.width * scale, map.height * scale, allocator),
             .map = map,
             .scale = scale,
         };
+
         var random = std.rand.DefaultPrng.init(blk: {
                     var seed: u64 = undefined;
                     std.os.getrandom(std.mem.asBytes(&seed)) catch unreachable;
                     break :blk seed;
                 }).random();
-        // dont forget to set up vehicles
-        for (vehicles) |_, ix| {
-            vehicles[ix] = Vehicle.new(map.start_x, map.start_y, map.start_angle, random);
+        for (vehicles) |*vehicle| {
+            vehicle.* = Vehicle.new(map.start_x, map.start_y, map.start_angle, random);
         }
-        vehicles[0].c0 = 0.896;
-        vehicles[0].c1 = 0.00354;
 
-        out.overlay = try Ppm.new(map.width * out.scale, map.height * out.scale, allocator);
-        // draw map
         drawMap(&out.overlay, out.map);
-
         return out;
     }
 
@@ -117,11 +102,8 @@ const Simulation = struct {
         }
         var gens_done: u32 = 0;
         while (gens_done < gens) : (gens_done += 1) {
-            //   copy over overlay
             out.copy_from(&self.overlay);
-            //   draw_vehicles
             drawVehicles(out, self.map, self.vehicles);
-            //   ppm_write out
             // out.write(std.io.getStdOut().writer());
             if (beams) {
                 for (self.vehicles) |*vehicle| {
@@ -130,19 +112,15 @@ const Simulation = struct {
                     _ = sense(vehicle.x, vehicle.y, vehicle.angle + PI / 4.0, self.map, out);
                 }
             }
-            //   for car in cars:
             for (self.vehicles) |*vehicle| {
-                //     drive
                 _ = drive(vehicle, self.map, &self.cfg);
             }
-            //   erase dead cars
             for (self.vehicles) |*vehicle, ix| {
                 if (!alive(vehicle, self.map)) {
                     drawVehicles(&self.overlay, self.map, self.vehicles[ix..ix]);
                 }
             }
             if (self.vehicles.len == 0) {
-                std.log.debug("bailing!", .{});
                 return;
             }
             self.t += 1;
@@ -158,7 +136,6 @@ fn readMapStdin(allocator: std.mem.Allocator) !Ppm {
 fn getPixel(pixels: []zimg.color.Rgb24, info: zimg.image.ImageInfo, x: u32, y: u32) zimg.color.Color {
     const loc = info.width * y + x;
     const out = pixels[loc];
-    std.log.debug("px = {}", .{out});
     return out.toColor();
 }
 
@@ -208,7 +185,6 @@ fn sense(x: f32, y: f32, a: f32, map: *Map, maybe_ppm: ?*Ppm) f32 {
             while (py < scale) : (py += 1) {
                 var px: u32 = 0;
                 while (px < scale) : (px += 1) {
-                    // std.log.debug("drawing beams", .{});
                     ppm.set_pixel(@intCast(u32, ix) * scale + px, @intCast(u32, iy) * scale + py, @enumToInt(Col.red));
                 }
             }
@@ -231,7 +207,6 @@ const Vehicle = struct {
     c1: f32,
 
     fn new(x: u32, y: u32, angle: f32, random: std.rand.Random) Vehicle {
-        // var random = std.rand.DefaultPrng.init(0).random();
         const exp: f32 = -32.0;
         return Vehicle {
             .x = @intToFloat(f32, x),
@@ -321,10 +296,6 @@ const Map = struct {
     }
 };
 
-const RED: u64 = 0xff0000;
-const GREEN: u64 = 0x00ff00;
-const BLUE: u64 = 0x0000ff;
-
 const Col = enum(u64) {
     red = 0xff_00_00,
     green = 0x00_ff_00,
@@ -335,11 +306,11 @@ const Col = enum(u64) {
 
     fn colour(in: u64) @This() {
         switch (in) {
-            RED => return .red,
-            GREEN => return .green,
-            BLUE => return .blue,
+            0xff_00_00 => return .red,
+            0x00_ff_00 => return .green,
+            0x00_00_ff => return .blue,
             0 => return .black,
-            0xffffff => return .white,
+            0xff_ff_ff => return .white,
             else => {
                 std.log.debug("colour got unexpected {x}", .{in});
                 return .unexpected;
@@ -383,21 +354,18 @@ const Ppm = struct {
     }
 
     fn get_pixel(self: @This(), x: u32, y: u32) u64 {
-        // todo bounds checks
-        // std.log.debug("fetch at {},{}", .{ x, y});
         const loc = 3 * self.width * y + 3 * x;
+        std.debug.assert(loc < self.data.items.len);
         const red: u64 = @as(u64, self.data.items[loc + 0]) << 16;
         const green: u64 = @as(u64, self.data.items[loc + 1]) << 8;
         const blue: u64 = @as(u64, self.data.items[loc + 2]) << 0;
 
         const ret = red | green | blue;
-        // std.log.debug("px at {},{} = {}", .{ x, y, Col.colour(ret) });
         return ret;
     }
     fn set_pixel(self: @This(), x: u32, y: u32, val: u64) void {
-        // todo bounds checks
-        // std.log.debug("set px at {},{} = {}", .{ x, y, Col.colour(val) });
         const loc = 3 * self.width * y + 3 * x;
+        std.debug.assert(loc < self.data.items.len);
         // red
         self.data.items[loc + 0] = @truncate(u8, val >> 16);
         // green

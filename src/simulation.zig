@@ -1,64 +1,5 @@
 const std = @import("std");
 
-pub fn drive(vehicle: *Vehicle, map: *Map, sysconf: *const Sysconf) bool {
-    if (!alive(vehicle, map)) {
-        return false;
-    }
-
-    var senses = [_]f32{0.0} ** 3;
-    var angles = [_]f32{ PI / -4.0, 0, PI / 4.0 };
-    for (senses) |_, ix| {
-        senses[ix] = sense(vehicle.x, vehicle.y, vehicle.angle + angles[ix], map, null);
-    }
-
-    var steering: f32 = senses[2] * vehicle.c0 - senses[0] * vehicle.c0;
-    var throttle: f32 = senses[1] * vehicle.c1;
-    if (throttle < sysconf.speedmin) {
-        throttle = sysconf.speedmin;
-    }
-    if (throttle > sysconf.speedmax) {
-        throttle = sysconf.speedmax;
-    }
-    vehicle.angle += if (@fabs(steering) > sysconf.control) std.math.copysign(f32, sysconf.control, steering) else steering;
-    vehicle.x += throttle * @cos(vehicle.angle);
-    vehicle.y += throttle * @sin(vehicle.angle);
-    return true;
-}
-
-pub fn sense(x: f32, y: f32, a: f32, map: *Map, maybe_ppm: ?*Ppm) f32 {
-    var dx: f32 = @cos(a);
-    var dy = @sin(a);
-    var d: i32 = 0;
-    while (true) : (d += 1) {
-        var bx: f32 = x + dx * @intToFloat(f32, d);
-        var by = y + dy * @intToFloat(f32, d);
-        var ix: i32 = @floatToInt(i32, bx);
-        var iy: i32 = @floatToInt(i32, by);
-        if (ix < 0 or (ix >= map.width) or (iy < 0) or (iy >= map.height)) {
-            break;
-        }
-        if (map.get(@intCast(u32, ix), @intCast(u32, iy))) {
-            break;
-        }
-        if (maybe_ppm) |ppm| {
-            var scale: u32 = ppm.width / map.width;
-            var py: u32 = 0;
-            while (py < scale) : (py += 1) {
-                var px: u32 = 0;
-                while (px < scale) : (px += 1) {
-                    ppm.set_pixel(@intCast(u32, ix) * scale + px, @intCast(u32, iy) * scale + py, @enumToInt(Col.red));
-                }
-            }
-        }
-    }
-    const fd = @intToFloat(f32, d);
-    return @sqrt(fd * dx * fd * dx + fd * dy * fd * dy);
-}
-
-fn alive(vehicle: *const Vehicle, map: *const Map) bool {
-    return !map.get(@floatToInt(u32, vehicle.x), @floatToInt(u32, vehicle.y));
-}
-
 pub const Vehicle = struct {
     x: f32,
     y: f32,
@@ -330,16 +271,16 @@ pub const Simulation = struct {
             drawVehicles(out_image, self.map, self.vehicles);
             if (beams) {
                 for (self.vehicles) |*vehicle| {
-                    _ = sense(vehicle.x, vehicle.y, vehicle.angle - PI / 4.0, self.map, out_image);
-                    _ = sense(vehicle.x, vehicle.y, vehicle.angle, self.map, out_image);
-                    _ = sense(vehicle.x, vehicle.y, vehicle.angle + PI / 4.0, self.map, out_image);
+                    _ = self.sense(vehicle.x, vehicle.y, vehicle.angle - PI / 4.0, out_image);
+                    _ = self.sense(vehicle.x, vehicle.y, vehicle.angle, out_image);
+                    _ = self.sense(vehicle.x, vehicle.y, vehicle.angle + PI / 4.0, out_image);
                 }
             }
             for (self.vehicles) |*vehicle| {
-                _ = drive(vehicle, self.map, &self.cfg);
+                _ = self.drive(vehicle);
             }
             for (self.vehicles) |*vehicle, ix| {
-                if (!alive(vehicle, self.map)) {
+                if (!self.alive(vehicle)) {
                     drawVehicles(&self.overlay, self.map, self.vehicles[ix..ix]);
                 }
             }
@@ -349,4 +290,64 @@ pub const Simulation = struct {
             self.t += 1;
         }
     }
+
+    fn drive(self: *Self, vehicle: *Vehicle) bool {
+        if (!self.alive(vehicle)) {
+            return false;
+        }
+
+        var senses = [_]f32{0.0} ** 3;
+        var angles = [_]f32{ PI / -4.0, 0, PI / 4.0 };
+        for (senses) |_, ix| {
+            senses[ix] = self.sense(vehicle.x, vehicle.y, vehicle.angle + angles[ix], null);
+        }
+
+        var steering: f32 = senses[2] * vehicle.c0 - senses[0] * vehicle.c0;
+        var throttle: f32 = senses[1] * vehicle.c1;
+        if (throttle < self.cfg.speedmin) {
+            throttle = self.cfg.speedmin;
+        }
+        if (throttle > self.cfg.speedmax) {
+            throttle = self.cfg.speedmax;
+        }
+        vehicle.angle += if (@fabs(steering) > self.cfg.control) std.math.copysign(f32, self.cfg.control, steering) else steering;
+        vehicle.x += throttle * @cos(vehicle.angle);
+        vehicle.y += throttle * @sin(vehicle.angle);
+        return true;
+    }
+
+    fn sense(self: *Self, x: f32, y: f32, a: f32, maybe_ppm: ?*Ppm) f32 {
+        var dx: f32 = @cos(a);
+        var dy = @sin(a);
+        var d: i32 = 0;
+        while (true) : (d += 1) {
+            var bx: f32 = x + dx * @intToFloat(f32, d);
+            var by = y + dy * @intToFloat(f32, d);
+            var ix: i32 = @floatToInt(i32, bx);
+            var iy: i32 = @floatToInt(i32, by);
+            if (ix < 0 or (ix >= self.map.width) or (iy < 0) or (iy >= self.map.height)) {
+                break;
+            }
+            if (self.map.get(@intCast(u32, ix), @intCast(u32, iy))) {
+                break;
+            }
+            if (maybe_ppm) |ppm| {
+                var scale: u32 = ppm.width / self.map.width;
+                var py: u32 = 0;
+                while (py < scale) : (py += 1) {
+                    var px: u32 = 0;
+                    while (px < scale) : (px += 1) {
+                        ppm.set_pixel(@intCast(u32, ix) * scale + px, @intCast(u32, iy) * scale + py, @enumToInt(Col.red));
+                    }
+                }
+            }
+        }
+        const fd = @intToFloat(f32, d);
+        return @sqrt(fd * dx * fd * dx + fd * dy * fd * dy);
+    }
+
+    fn alive(self: *Self, vehicle: *const Vehicle) bool {
+        return !self.map.get(@floatToInt(u32, vehicle.x), @floatToInt(u32, vehicle.y));
+    }
+
 };

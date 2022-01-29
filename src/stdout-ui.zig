@@ -1,10 +1,11 @@
-// This version does not produce output - it can be used to benchmark the simulation code.
+// AI race car drivers
+// $ zig build run-stdout <map.ppm |  mpv --no-correct-pts --fps=60 -
+//
+// Input image format: road is black (000000), barriers are white (ffffff),
+// cars start on the green pixel (00ff00) aimed at the blue (0000ff) pixel.
 
 const std = @import("std");
 const sim = @import("simulation.zig");
-
-const zgt = @import("zgt");
-pub usingnamespace zgt.cross_platform;
 
 const Vehicle = sim.Vehicle;
 const Ppm = sim.Ppm;
@@ -24,7 +25,9 @@ pub fn main() anyerror!void {
     var out_image = try Ppm.new(map.width * simulation.scale, map.height * simulation.scale, allocator);
     try simulation.run(1, &out_image, beams);
 
+    const stdout_writer = std.io.getStdOut().writer();
     while (true) {
         try simulation.run(1, &out_image, beams);
+        out_image.write(stdout_writer);
     }
 }

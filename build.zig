@@ -12,19 +12,37 @@ pub fn build(b: *std.build.Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
-    const exe = b.addExecutable("aidrivers", "src/main.zig");
-    // exe.addPackagePath("zigimg", "ext/zigimg/zigimg.zig");
-    exe.setTarget(target);
-    exe.setBuildMode(mode);
-    @import("ext/zgt/build.zig").install(exe, "ext/zgt") catch std.log.debug("no zgt??", .{});
-    exe.install();
-
-    const run_cmd = exe.run();
-    run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
+    const zgt_exe = b.addExecutable("zgt", "src/zgt-ui.zig");
+    {
+        zgt_exe.setTarget(target);
+        zgt_exe.setBuildMode(mode);
+        @import("ext/zgt/build.zig").install(zgt_exe, "ext/zgt") catch std.log.debug("no zgt??", .{});
+        zgt_exe.install();
     }
 
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
+    const stdout_exe = b.addExecutable("stdout", "src/stdout-ui.zig");
+    {
+        stdout_exe.setTarget(target);
+        stdout_exe.setBuildMode(mode);
+        stdout_exe.install();
+    }
+
+
+    const zgt_run_cmd = zgt_exe.run();
+    zgt_run_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        zgt_run_cmd.addArgs(args);
+    }
+
+    const zgt_run_step = b.step("run-zgt", "Run the app");
+    zgt_run_step.dependOn(&zgt_run_cmd.step);
+
+    const stdout_run_cmd = stdout_exe.run();
+    stdout_run_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        stdout_run_cmd.addArgs(args);
+    }
+
+    const stdout_run_step = b.step("run-stdout", "Run the app");
+    stdout_run_step.dependOn(&stdout_run_cmd.step);
 }

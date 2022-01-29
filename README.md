@@ -15,9 +15,6 @@ Some features (e.g. most things that would be controlled via cmdline args) are a
 I'm also using this project as a personal testbed for different aspects of zig language/toolchain/libraries.
 For example, `aidrivers.c` outputs raw PPM data to stdout. `zig-aidrivers` supports this too (`src/stdout-ui.zig`), but I've included another version that uses [zgt](https://github.com/zenith391/zgt) (`src/zgt-ui.zig`) for the UI.
 
-In the future I'd like to experiment with targeting wasm/web browsers and different UI libraries (microui, Dear ImGui).
-
-
 ## Maps
 
 Input image format: road is black (000000), barriers are white (ffffff), cars start on the green pixel (00ff00) aimed at the blue (0000ff) pixel.
@@ -45,3 +42,13 @@ Requires `mpv` or another video player that supports reading PPM from stdin.
 ### `zgt` version
 
     $ zig build run-zgt <map.ppm
+
+
+
+## Next steps
+* hook up a build/run step for main.zig
+* perf stats to stderr when running via main.zig
+* clean up the simulation code a bit
+* try array/arraylist of u1 instead of the "u64 bit array" that Map uses (esp from perf POV)
+* some kind of wasm output
+* different UI libs - microui, Dear ImGui

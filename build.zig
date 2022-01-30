@@ -27,22 +27,36 @@ pub fn build(b: *std.build.Builder) void {
         stdout_exe.install();
     }
 
+    const headless_exe = b.addExecutable("headless", "src/main.zig");
+    {
+        headless_exe.setTarget(target);
+        headless_exe.setBuildMode(mode);
+        headless_exe.install();
+    }
+
 
     const zgt_run_cmd = zgt_exe.run();
     zgt_run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
         zgt_run_cmd.addArgs(args);
     }
-
-    const zgt_run_step = b.step("run-zgt", "Run the app");
+    const zgt_run_step = b.step("run-zgt", "Run the app, zgt output");
     zgt_run_step.dependOn(&zgt_run_cmd.step);
+
 
     const stdout_run_cmd = stdout_exe.run();
     stdout_run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
         stdout_run_cmd.addArgs(args);
     }
-
-    const stdout_run_step = b.step("run-stdout", "Run the app");
+    const stdout_run_step = b.step("run-stdout", "Run the app, stdout output");
     stdout_run_step.dependOn(&stdout_run_cmd.step);
+
+    const headless_run_cmd = headless_exe.run();
+    headless_run_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        headless_run_cmd.addArgs(args);
+    }
+    const headless_run_step = b.step("run-main", "Run the app, no output (benchmark)");
+    headless_run_step.dependOn(&headless_run_cmd.step);
 }

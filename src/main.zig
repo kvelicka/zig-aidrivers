@@ -3,9 +3,6 @@
 const std = @import("std");
 const sim = @import("simulation.zig");
 
-const zgt = @import("zgt");
-pub usingnamespace zgt.cross_platform;
-
 const Vehicle = sim.Vehicle;
 const Ppm = sim.Ppm;
 const Map = sim.Map;
@@ -24,7 +21,16 @@ pub fn main() anyerror!void {
     var out_image = try Ppm.new(map.width * simulation.scale, map.height * simulation.scale, allocator);
     try simulation.run(1, &out_image, beams);
 
+    var ticks: usize = 0;
+    var timer = try std.time.Timer.start();
+    const lap_size = 500;
     while (true) {
+        if (ticks % lap_size == 0) {
+            const duration = timer.lap();
+            // const secs: f64 =  duration / std.time.ns_per_s;
+            std.log.info("{} ticks took {}ms", .{lap_size, duration / std.time.ns_per_ms});
+        }
         try simulation.run(1, &out_image, beams);
+        ticks += 1;
     }
 }

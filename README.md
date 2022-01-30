@@ -46,9 +46,6 @@ Requires `mpv` or another video player that supports reading PPM from stdin.
 
 
 ## Next steps
-* hook up a build/run step for main.zig
-* perf stats to stderr when running via main.zig
-* clean up the simulation code a bit
 * try array/arraylist of u1 instead of the "u64 bit array" that Map uses (esp from perf POV)
 * some kind of wasm output
 * different UI libs - microui, Dear ImGui

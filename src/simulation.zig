@@ -1,5 +1,8 @@
 const std = @import("std");
 
+const PI = 3.14;
+
+
 pub const Vehicle = struct {
     x: f32,
     y: f32,
@@ -21,7 +24,7 @@ pub const Vehicle = struct {
     }
 };
 
-const Sysconf = struct {
+const Config = struct {
     speedmin: f32 = 0.1,
     speedmax: f32 = 0.5,
     // Maximum turn per step
@@ -197,39 +200,9 @@ pub const Ppm = struct {
     }
 };
 
-pub fn drawMap(ppm: *Ppm, map: *Map) void {
-    var scale: u32 = ppm.width / map.width;
-    var y: u32 = 0;
-    while (y < ppm.height) : (y += 1) {
-        var x: u32 = 0;
-        while (x < ppm.width) : (x += 1) {
-            const colour: u64 = @enumToInt(if (map.get(x / scale, y / scale)) Col.white else Col.black);
-            ppm.set_pixel(x, y, colour);
-        }
-    }
-}
-
-const PI = 3.14;
-
-pub fn drawVehicles(ppm: *Ppm, map: *Map, vehicles: []Vehicle) void {
-    const scale: i32 = @intCast(i32, ppm.width / map.width);
-    for (vehicles) |v, i| {
-        _ = i;
-        var d: i32 = -scale * 2;
-        while (d < scale * 2) : (d += 1) {
-            var j: i32 = -@divTrunc(scale, 2);
-            while (j < @divTrunc(scale, 2)) : (j += 1) {
-                const x: f32 = @intToFloat(f32, scale) * v.x + @intToFloat(f32, j) * @cos(v.angle - PI / 2.0) + @intToFloat(f32, d) * @cos(v.angle) / 2.0;
-                const y: f32 = @intToFloat(f32, scale) * v.y + @intToFloat(f32, j) * @sin(v.angle - PI / 2.0) + @intToFloat(f32, d) * @sin(v.angle) / 2.0;
-                ppm.set_pixel(@floatToInt(u32, x), @floatToInt(u32, y), v.colour);
-            }
-        }
-    }
-}
-
 pub const Simulation = struct {
     scale: u32,
-    cfg: Sysconf = Sysconf{},
+    cfg: Config = Config{},
     t: u64 = 0,
 
     vehicles: []Vehicle,
@@ -257,7 +230,7 @@ pub const Simulation = struct {
             vehicle.* = Vehicle.new(map.start_x, map.start_y, map.start_angle, random);
         }
 
-        drawMap(&out.overlay, out.map);
+        out.drawMap();
         return out;
     }
 
@@ -268,7 +241,7 @@ pub const Simulation = struct {
         var gens_done: u32 = 0;
         while (gens_done < gens) : (gens_done += 1) {
             out_image.copy_from(&self.overlay);
-            drawVehicles(out_image, self.map, self.vehicles);
+            self.drawVehicles(out_image, self.vehicles);
             if (beams) {
                 for (self.vehicles) |*vehicle| {
                     _ = self.sense(vehicle.x, vehicle.y, vehicle.angle - PI / 4.0, out_image);
@@ -281,13 +254,40 @@ pub const Simulation = struct {
             }
             for (self.vehicles) |*vehicle, ix| {
                 if (!self.alive(vehicle)) {
-                    drawVehicles(&self.overlay, self.map, self.vehicles[ix..ix]);
+                    self.drawVehicles(&self.overlay, self.vehicles[ix..ix]);
                 }
             }
             if (self.vehicles.len == 0) {
                 return;
             }
             self.t += 1;
+        }
+    }
+
+    fn drawMap(self: *Self) void {
+        var y: u32 = 0;
+        while (y < self.overlay.height) : (y += 1) {
+            var x: u32 = 0;
+            while (x < self.overlay.width) : (x += 1) {
+                const colour: u64 = @enumToInt(if (self.map.get(x / self.scale, y / self.scale)) Col.white else Col.black);
+                self.overlay.set_pixel(x, y, colour);
+            }
+        }
+    }
+
+    fn drawVehicles(self: *Self, ppm: *Ppm, vehicles: []Vehicle) void {
+        const scale: i32 = @intCast(i32, self.scale);
+        for (vehicles) |v, i| {
+            _ = i;
+            var d: i32 = -scale * 2;
+            while (d < scale * 2) : (d += 1) {
+                var j: i32 = -@divTrunc(scale, 2);
+                while (j < @divTrunc(scale, 2)) : (j += 1) {
+                    const x: f32 = @intToFloat(f32, scale) * v.x + @intToFloat(f32, j) * @cos(v.angle - PI / 2.0) + @intToFloat(f32, d) * @cos(v.angle) / 2.0;
+                    const y: f32 = @intToFloat(f32, scale) * v.y + @intToFloat(f32, j) * @sin(v.angle - PI / 2.0) + @intToFloat(f32, d) * @sin(v.angle) / 2.0;
+                    ppm.set_pixel(@floatToInt(u32, x), @floatToInt(u32, y), v.colour);
+                }
+            }
         }
     }
 

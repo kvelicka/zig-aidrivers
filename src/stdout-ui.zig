@@ -28,8 +28,25 @@ pub fn main() anyerror!void {
     try simulation.run(1, &out_image, beams);
 
     const stdout_writer = std.io.getStdOut().writer();
+
+    const debug = false;
+
+    var ticks: usize = 0;
+    var timer: std.time.Timer = undefined;
+    var lap_size: usize = undefined;
+
+    if (debug) {
+        timer = try std.time.Timer.start();
+        lap_size = 60;
+    }
     while (true) {
+        if (debug and ticks % lap_size == 0) {
+            const duration = timer.lap();
+            std.log.info("{} ticks took {}ms", .{ lap_size, duration / std.time.ns_per_ms });
+            std.log.info("", .{});
+        }
         try simulation.run(1, &out_image, beams);
         out_image.write(stdout_writer);
+        ticks += 1;
     }
 }

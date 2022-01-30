@@ -277,8 +277,7 @@ pub const Simulation = struct {
 
     fn drawVehicles(self: *Self, ppm: *Ppm, vehicles: []Vehicle) void {
         const scale: i32 = @intCast(i32, self.scale);
-        for (vehicles) |v, i| {
-            _ = i;
+        for (vehicles) |v| {
             var d: i32 = -scale * 2;
             while (d < scale * 2) : (d += 1) {
                 var j: i32 = -@divTrunc(scale, 2);

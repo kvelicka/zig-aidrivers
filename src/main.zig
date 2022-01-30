@@ -13,10 +13,12 @@ pub fn main() anyerror!void {
     var allocator = std.testing.allocator;
 
     var beams = false;
-    var scale: u32 = 12;
+    const width = 800;
 
     const map_image: Ppm = try Ppm.from_stdin(allocator);
     var map: Map = try Map.from_ppm(&map_image, allocator);
+    const scale = std.math.max(width / map.width, 2);
+    std.log.info("scale={}", .{scale});
     var simulation = try Simulation.new(&map, scale, &vehicles, allocator);
     var out_image = try Ppm.new(map.width * simulation.scale, map.height * simulation.scale, allocator);
     try simulation.run(1, &out_image, beams);

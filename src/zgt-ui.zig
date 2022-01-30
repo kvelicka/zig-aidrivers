@@ -21,10 +21,13 @@ pub fn main() anyerror!void {
     var allocator = std.testing.allocator;
 
     var beams = false;
-    var scale: u32 = 12;
+    const width = 800;
 
     const map_image: Ppm = try Ppm.from_stdin(allocator);
     var map: Map = try Map.from_ppm(&map_image, allocator);
+
+    const scale = width / map.width;
+    std.log.info("scale={}", .{scale});
     var simulation = try Simulation.new(&map, scale, &vehicles, allocator);
     var out_image = try Ppm.new(map.width * simulation.scale, map.height * simulation.scale, allocator);
     try simulation.run(1, &out_image, beams);
@@ -37,7 +40,7 @@ pub fn main() anyerror!void {
     var image = zgt.Image(.{ .data = imageData });
     try window.set(zgt.Column(.{}, .{zgt.Row(.{}, .{ &image })}));
 
-    window.resize(800, 450);
+    window.resize(width, 450);
     window.show();
     var frame_start: i64 = 0;
     while (zgt.stepEventLoop(.Asynchronous)) {

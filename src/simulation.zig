@@ -209,6 +209,10 @@ pub const Simulation = struct {
     const Self = @This();
 
     pub fn new(map: *Map, scale: u32, vehicles: []Vehicle, allocator: anytype) !Simulation {
+        if (scale < 2) {
+            std.log.err("scale < 2 does not work. got={}", .{scale});
+            std.os.exit(1);
+        }
         var out = Simulation{
             .vehicles = vehicles,
             .allocator = allocator,

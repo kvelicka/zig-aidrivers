@@ -37,15 +37,12 @@ pub const Map = struct {
     start_x: u32,
     start_y: u32,
     start_angle: f32,
-    data: []u64,
+    data: []bool,
 
     pub fn from_ppm(ppm: *const Ppm, allocator: std.mem.Allocator) !@This() {
-        const item_size = 8 * @sizeOf(u64);
-        const data_sz = (ppm.width * ppm.height + item_size - 1) / item_size * @sizeOf(u64);
-        std.log.debug("data_sz={}", .{data_sz});
-        var map_buf = try allocator.alloc(u64, data_sz);
+        var map_buf = try allocator.alloc(bool, ppm.width * ppm.height);
         for (map_buf) |*item| {
-            item.* = 0;
+            item.* = false;
         }
         var ret = Map{
             .width = ppm.width,
@@ -86,9 +83,9 @@ pub const Map = struct {
             x = 0;
             while (x < ppm.width) : (x += 1) {
                 const col = ppm.get_pixel(x, y);
-                const v = @as(u64, @boolToInt(col >> 16 > 0x7f));
+                const v = col >> 16 > 0x7f;
                 const pixel: usize = y * ppm.width + x;
-                ret.data[pixel / item_size] |= v << @intCast(u6, @mod(pixel, item_size));
+                ret.data[pixel] = v;
             }
         }
         return ret;
@@ -96,8 +93,7 @@ pub const Map = struct {
 
     fn get(self: *const @This(), x: u32, y: u32) bool {
         const pixel = y * self.width + x;
-        const item_size = 8 * @sizeOf(u64);
-        return self.data[pixel / item_size] >> @intCast(u6, @mod(pixel, item_size)) & 1 > 0;
+        return self.data[pixel];
     }
 };
 

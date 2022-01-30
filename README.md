@@ -46,6 +46,5 @@ Requires `mpv` or another video player that supports reading PPM from stdin.
 
 
 ## Next steps
-* try array/arraylist of u1 instead of the "u64 bit array" that Map uses (esp from perf POV)
 * some kind of wasm output
 * different UI libs - microui, Dear ImGui
